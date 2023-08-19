@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.20.0/full/pyodide.js"></script>
+</head>
+<body>
+<script type="text/javascript">
+    async function main(){
+        let pyodide = await loadPyodide();
+        await pyodide.loadPackage("micropip");
+        const micropip = pyodide.pyimport("micropip");
+        // await micropip.install('snowballstemmer');
+
+        await micropip.install('https://files.pythonhosted.org/packages/63/9b/4eb29054ab14e4670e5b3cd32bde77de60668034ee32b28b015941ca7966/sigma_cli-0.7.6-py3-none-any.whl')
+
+        await micropip.install('setuptools')
+        // await micropip.install('termios')
+        await micropip.install('click')
+        await micropip.install('pysigma-backend-splunk')
+
+        let data = await fetch('https://raw.githubusercontent.com/SigmaHQ/sigma/master/rules/windows/file/file_event/file_event_win_access_susp_unattend_xml.yml').then(res => res.text())
+
+        pyodide.FS.writeFile("/sigma_rule.yml", data, { encoding: "utf8" });
+        let file = pyodide.FS.readFile("/sigma_rule.yml", { encoding: "utf8" });
+        console.log(file); // ==> "hello world!"
+
+        pyodide.runPython(`
+from sigma.cli.list  import list_pipelines
+from sigma.cli.convert import convert
+from functools import partial
+from inspect import getmembers
+import pathlib
+import click
+
+
+all_functions_of_click_commands = {}
+
+def _call_click_command(cmd: click.Command, *args, **kwargs):
+    result = cmd.callback(*args, **kwargs)
+    return result
+
+# _call_click_command(convert)
+_call_click_command(list_pipelines, 'splunk')
+# _call_click_command (convert, input=[pathlib.Path('/sigma_rule.yml')], target='splunk', pipeline=['splunk_windows'], without_pipeline=True, pipeline_check=False, format='default', file_pattern='*.yml', skip_unsupported=False, output='-', encoding='utf-8', json_indent=0, backend_option=[])
+
+        `);
+
+
+    }
+    main();
+</script>
+</body>
+</html>

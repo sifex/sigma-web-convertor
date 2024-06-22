@@ -5,7 +5,19 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx,vue}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      backdropFilter: {
+        'none': 'none',
+        'blur': 'blur(20px)',
+      },
+    }
   },
-  plugins: [],
+  variants: {
+    extend: {
+      backdropFilter: ['responsive'],
+    },
+  },
+  plugins: [
+    require('@tailwindcss/forms'),
+  ],
 }

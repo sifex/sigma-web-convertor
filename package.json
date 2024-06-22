@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "error-stack-parser": "^2",
-    "pyodide": "0.26.1",
+    "pyodide": "^0.26.1",
     "vue": "^3"
   },
   "devDependencies": {

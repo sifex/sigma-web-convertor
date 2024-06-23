@@ -1,9 +1,15 @@
-<template>
-  <div class="p-10 flex flex-col justify-center items-center h-full w-full">
-    <SigmaConverter />
-  </div>
-</template>
-
 <script lang="ts" setup>
-import SigmaConverter from './components/SigmaConverter.vue';
+import Mail from './components/Mail.vue'
+import { accounts, mails } from './data/mails'
 </script>
+
+<template>
+    <div class="hidden flex-col md:flex h-screen">
+        <Mail
+            class="h-screen"
+            :accounts="accounts"
+            :mails="mails"
+            :nav-collapsed-size="4"
+        />
+    </div>
+</template>

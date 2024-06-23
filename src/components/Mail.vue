@@ -1,224 +1,128 @@
 <script lang="ts" setup>
-import {
-    Search,
-} from 'lucide-vue-next'
-
-import { computed, ref } from 'vue'
+import { ref, computed } from 'vue'
+import { Search } from 'lucide-vue-next'
 import { refDebounced } from '@vueuse/core'
-import type { Mail } from '../data/mails'
 import AccountSwitcher from './AccountSwitcher.vue'
-import MailList from './MailList.vue'
-import MailDisplay from './SigmaFileDisplay.vue'
-import Nav, { type LinkProp } from './Nav.vue'
+import SigmaFileList from './SigmaFileList.vue'
+import SigmaFileDisplay from './SigmaFileDisplay.vue'
+import Nav from './Nav.vue'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
-import {
-    Tabs,
-    TabsContent,
-    TabsList,
-    TabsTrigger,
-} from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
-import SigmaConverter from "@/components/SigmaConverter.vue";
 
-interface MailProps {
-    accounts: {
-        label: string
-        email: string
-        icon: string
-    }[]
-    mails: Mail[]
-    defaultLayout?: number[]
-    defaultCollapsed?: boolean
-    navCollapsedSize: number
+interface SigmaFile {
+    id: string
+    name: string
+    content: string
+    date: Date
 }
 
-const props = withDefaults(defineProps<MailProps>(), {
-    defaultCollapsed: false,
-    defaultLayout: () => [265, 440, 655],
-})
+// Mock data (replace with actual data management later)
+const accounts = [
+    {
+        label: 'Sigma Converter',
+        email: 'converter@sigma.com',
+        icon: 'lucide:code',
+    },
+]
 
-const isCollapsed = ref(props.defaultCollapsed)
-const selectedMail = ref<string | undefined>(props.mails[0].id)
+const sigmaFiles = ref<SigmaFile[]>([
+    {
+        id: '1',
+        name: 'AWS Root Credentials',
+        content: 'title: AWS Root Credentials\ndescription: Detects AWS root account usage\nlogsource:\n  product: aws\n  service: cloudtrail\ndetection:\n  selection:\n    userIdentity.type: Root\n  filter:\n    eventType: AwsServiceEvent\n  condition: selection and not filter\nfalsepositives:\n  - AWS Tasks That Require Root User Credentials\nlevel: medium',
+        date: new Date('2024-06-23T10:00:00'),
+    },
+    // Add more mock files as needed
+])
+
+const isCollapsed = ref(false)
+const selectedFile = ref<string | undefined>(sigmaFiles.value[0].id)
 const searchValue = ref('')
 const debouncedSearch = refDebounced(searchValue, 250)
 
-const filteredMailList = computed(() => {
-    let output: Mail[] = []
-    const searchValue = debouncedSearch.value?.trim()
-    if (!searchValue) {
-        output = props.mails
-    }
-
-    else {
-        output = props.mails.filter((item) => {
-            return item.name.includes(debouncedSearch.value)
-                || item.email.includes(debouncedSearch.value)
-                || item.name.includes(debouncedSearch.value)
-                || item.subject.includes(debouncedSearch.value)
-                || item.text.includes(debouncedSearch.value)
-        })
-    }
-
-    return output
+const filteredFileList = computed(() => {
+    const searchValue = debouncedSearch.value?.trim().toLowerCase()
+    if (!searchValue) return sigmaFiles.value
+    return sigmaFiles.value.filter(file =>
+        file.name.toLowerCase().includes(searchValue) ||
+        file.content.toLowerCase().includes(searchValue)
+    )
 })
 
-const unreadMailList = computed(() => filteredMailList.value.filter(item => !item.read))
+const selectedFileData = computed(() => sigmaFiles.value.find(file => file.id === selectedFile.value))
 
-const selectedMailData = computed(() => props.mails.find(item => item.id === selectedMail.value))
-
-const links: LinkProp[] = [
+const links = [
     {
-        title: 'Inbox',
-        label: '128',
-        icon: 'lucide:inbox',
+        title: 'Files',
+        label: sigmaFiles.value.length.toString(),
+        icon: 'lucide:file',
         variant: 'default',
     },
     {
-        title: 'Drafts',
-        label: '9',
-        icon: 'lucide:file',
+        title: 'Converted',
+        label: '0',
+        icon: 'lucide:check',
         variant: 'ghost',
     },
-    {
-        title: 'Sent',
-        label: '',
-        icon: 'lucide:send',
-        variant: 'ghost',
-    },
-    {
-        title: 'Junk',
-        label: '23',
-        icon: 'lucide:archive',
-        variant: 'ghost',
-    },
-    {
-        title: 'Trash',
-        label: '',
-        icon: 'lucide:trash',
-        variant: 'ghost',
-    },
-    {
-        title: 'Archive',
-        label: '',
-        icon: 'lucide:archive',
-        variant: 'ghost',
-    },
+    // Add more navigation items as needed
 ]
 
-const links2: LinkProp[] = [
-    {
-        title: 'Social',
-        label: '972',
-        icon: 'lucide:user-2',
-        variant: 'ghost',
-    },
-    {
-        title: 'Updates',
-        label: '342',
-        icon: 'lucide:alert-circle',
-        variant: 'ghost',
-    },
-    {
-        title: 'Forums',
-        label: '128',
-        icon: 'lucide:message-square',
-        variant: 'ghost',
-    },
-    {
-        title: 'Shopping',
-        label: '8',
-        icon: 'lucide:shopping-cart',
-        variant: 'ghost',
-    },
-    {
-        title: 'Promotions',
-        label: '21',
-        icon: 'lucide:archive',
-        variant: 'ghost',
-    },
-]
-
-function onCollapse() {
-    isCollapsed.value = true
-}
-
-function onExpand() {
-    isCollapsed.value = false
+function onCollapse(collapsed: boolean) {
+    isCollapsed.value = collapsed
 }
 </script>
 
 <template>
     <TooltipProvider :delay-duration="0">
-        <ResizablePanelGroup
-            id="resize-panel-group-1"
-            direction="horizontal"
-            class="h-full items-stretch"
-        >
+        <ResizablePanelGroup direction="horizontal" class="h-dvh items-stretch">
             <ResizablePanel
-                id="resize-panel-1"
-                :default-size="defaultLayout[0]"
-                :collapsed-size="navCollapsedSize"
-                collapsible
-                :min-size="15"
-                :max-size="20"
-                :class="cn(isCollapsed && 'min-w-[50px] transition-all duration-300 ease-in-out')"
-                @expand="onExpand"
+                :default-size="265"
+                :collapsed-size="4"
+                :min-size="4"
+                :collapsible="true"
+                class="bg-muted"
                 @collapse="onCollapse"
             >
                 <div :class="cn('flex h-[52px] items-center justify-center', isCollapsed ? 'h-[52px]' : 'px-2')">
                     <AccountSwitcher :is-collapsed="isCollapsed" :accounts="accounts" />
                 </div>
                 <Separator />
-                <Nav
-                    :is-collapsed="isCollapsed"
-                    :links="links"
-                />
-                <Separator />
-                <Nav
-                    :is-collapsed="isCollapsed"
-                    :links="links2"
-                />
+                <Nav :is-collapsed="isCollapsed" :links="links" />
             </ResizablePanel>
-            <ResizableHandle id="resize-handle-1" with-handle />
-            <ResizablePanel id="resize-panel-2" :default-size="defaultLayout[1]" :min-size="30">
-                <Tabs default-value="all">
+            <ResizableHandle withHandle />
+            <ResizablePanel :default-size="440" :min-size="30">
+                <Tabs default-value="all" class="h-full">
                     <div class="flex items-center px-4 py-2">
-                        <h1 class="text-xl font-bold">
-                            Inbox
-                        </h1>
+                        <h1 class="text-xl font-bold">Sigma Files</h1>
                         <TabsList class="ml-auto">
-                            <TabsTrigger value="all" class="text-zinc-600 dark:text-zinc-200">
-                                All mail
-                            </TabsTrigger>
-                            <TabsTrigger value="unread" class="text-zinc-600 dark:text-zinc-200">
-                                Unread
-                            </TabsTrigger>
+                            <TabsTrigger value="all" class="text-zinc-600 dark:text-zinc-200">All files</TabsTrigger>
+                            <TabsTrigger value="converted" class="text-zinc-600 dark:text-zinc-200">Converted</TabsTrigger>
                         </TabsList>
                     </div>
                     <Separator />
                     <div class="bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                         <form>
                             <div class="relative">
-                                <Search class="absolute left-2 top-2.5 size-4 text-muted-foreground" />
+                                <Search class="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                                 <Input v-model="searchValue" placeholder="Search" class="pl-8" />
                             </div>
                         </form>
                     </div>
                     <TabsContent value="all" class="m-0">
-                        <MailList v-model:selected-mail="selectedMail" :items="filteredMailList" />
+                        <SigmaFileList v-model:selected-file="selectedFile" :items="filteredFileList" />
                     </TabsContent>
-                    <TabsContent value="unread" class="m-0">
-                        <MailList v-model:selected-mail="selectedMail" :items="unreadMailList" />
+                    <TabsContent value="converted" class="m-0">
+                        <SigmaFileList v-model:selected-file="selectedFile" :items="[]" />
                     </TabsContent>
                 </Tabs>
             </ResizablePanel>
-            <ResizableHandle id="resiz-handle-2" with-handle />
-            <ResizablePanel id="resize-panel-3" :default-size="defaultLayout[2]">
-                <MailDisplay :mail="selectedMailData" />
-<!--                <SigmaConverter />-->
+            <ResizableHandle withHandle />
+            <ResizablePanel :default-size="655">
+                <SigmaFileDisplay :file="selectedFileData" />
             </ResizablePanel>
         </ResizablePanelGroup>
     </TooltipProvider>

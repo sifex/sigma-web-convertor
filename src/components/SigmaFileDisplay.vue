@@ -1,236 +1,301 @@
 <script lang="ts" setup>
-import { Archive, ArchiveX, Clock, Forward, MoreVertical, Reply, ReplyAll, Trash2 } from 'lucide-vue-next'
-import { computed } from 'vue'
-import addDays from 'date-fns/addDays'
-import addHours from 'date-fns/addHours'
-import format from 'date-fns/format'
-import nextSaturday from 'date-fns/nextSaturday'
-import type { Mail } from '../data/mails'
-import { Calendar } from '@/components/ui/calendar'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { ref, watch, onMounted, computed } from 'vue'
+import { Clipboard, Eye } from 'lucide-vue-next'
+import Prism from 'prismjs/prism'
+import 'prismjs/components/prism-yaml'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { TagsInput, TagsInputInput, TagsInputItem, TagsInputItemDelete, TagsInputItemText } from '@/components/ui/tags-input'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { convertSigmaRule } from '../utils/sigmaUtils'
+import { sigmaTargets } from '../constants'
+import { loadPyodideAndBackends } from '../utils/pyodideLoader'
+import { logsources, Logsource } from '../data/logsources'
+import { SigmaRule, LogsourceData } from '../utils/SigmaRule'
 
-interface MailDisplayProps {
-    mail: Mail | undefined
+interface SigmaFile {
+    id: string
+    name: string
+    content: string
+    date: Date
 }
 
-const props = defineProps<MailDisplayProps>()
+interface SigmaFileDisplayProps {
+    file: SigmaFile | undefined
+}
 
-const mailFallbackName = computed(() => {
-    return props.mail?.name
-        .split(' ')
-        .map(chunk => chunk[0])
-        .join('')
+const props = defineProps<SigmaFileDisplayProps>()
+
+const sigmaRule = ref(new SigmaRule())
+const yamlSource = ref('')
+const showYamlSource = ref(false)
+const conversionResult = ref('')
+const target = ref('splunk')
+const isLoading = ref(true)
+const isPyodideReady = ref(false)
+
+const statusOptions = ['experimental', 'test', 'stable', 'deprecated', 'unsupported']
+const levelOptions = ['informational', 'low', 'medium', 'high', 'critical']
+
+const highlightedYaml = computed(() => {
+    return Prism.highlight(yamlSource.value, Prism.languages.yaml, 'yaml')
 })
 
-const today = new Date()
+const detectionYaml = computed({
+    get: () => sigmaRule.value.getDetectionYaml(),
+    set: (value: string) => sigmaRule.value.setDetectionFromYaml(value)
+})
+const detectionTextarea = ref<HTMLTextAreaElement | null>(null)
+const highlightedDetection = computed(() => {
+    return Prism.highlight(detectionYaml.value, Prism.languages.yaml, 'yaml')
+})
+
+function updateDetectionHighlight() {
+    if (detectionTextarea.value) {
+        detectionTextarea.value.style.height = 'auto'
+        detectionTextarea.value.style.height = `${detectionTextarea.value.scrollHeight}px`
+    }
+}
+
+watch(detectionYaml, updateDetectionHighlight, { immediate: true })
+
+onMounted(async () => {
+    try {
+        await loadPyodideAndBackends([target.value])
+        isPyodideReady.value = true
+        isLoading.value = false
+        if (props.file) {
+            sigmaRule.value = new SigmaRule(props.file.content)
+            yamlSource.value = sigmaRule.value.generateYaml()
+            await convertFile()
+        }
+    } catch (error) {
+        console.error('Error loading Pyodide:', error)
+        conversionResult.value = `Error: Failed to load Pyodide. ${error.message}`
+        isLoading.value = false
+    }
+})
+
+watch(() => props.file, (newFile) => {
+    if (newFile) {
+        sigmaRule.value = new SigmaRule(newFile.content)
+        yamlSource.value = sigmaRule.value.generateYaml()
+        if (isPyodideReady.value) {
+            convertFile()
+        }
+    }
+}, { immediate: true })
+
+watch(() => sigmaRule.value.getData(), async () => {
+    yamlSource.value = sigmaRule.value.generateYaml()
+    if (isPyodideReady.value) {
+        await convertFile()
+    }
+}, { deep: true })
+
+watch(target, async () => {
+    if (isPyodideReady.value) {
+        await switchTargets()
+    }
+})
+
+async function switchTargets() {
+    try {
+        isLoading.value = true
+        conversionResult.value = 'Loading new backend...'
+        await loadPyodideAndBackends([target.value])
+        isLoading.value = false
+        await convertFile()
+    } catch (error) {
+        console.error('Error installing backend:', error)
+        conversionResult.value = `Error: Failed to install backend for ${sigmaTargets.get(target.value)?.title}. ${error.message}`
+        isLoading.value = false
+    }
+}
+
+async function convertFile() {
+    if (!isLoading.value && isPyodideReady.value) {
+        try {
+            conversionResult.value = await convertSigmaRule(yamlSource.value, target.value)
+        } catch (error) {
+            console.error('Error during conversion:', error)
+            conversionResult.value = `Error: Failed to convert Sigma rule. ${error.message}`
+        }
+    }
+}
+
+function copyToClipboard() {
+    navigator.clipboard.writeText(yamlSource.value)
+        .then(() => {
+            // You might want to show a success message here
+        })
+        .catch(err => {
+            console.error('Failed to copy text: ', err)
+        })
+}
+
+function toggleViewSource() {
+    showYamlSource.value = !showYamlSource.value
+}
+
+function getLogsourceDescription(logsource: LogsourceData): string {
+    const matchingLogsource = logsources.find(ls =>
+        ls.category === logsource.category &&
+        ls.product === logsource.product &&
+        ls.service === logsource.service
+    );
+    return matchingLogsource ? matchingLogsource.description : 'Custom Logsource';
+}
 </script>
 
 <template>
     <div class="flex h-full flex-col">
-        <div class="flex items-center p-2">
+        <div class="flex items-center justify-between p-2">
             <div class="flex items-center gap-2">
                 <Tooltip>
                     <TooltipTrigger as-child>
-                        <Button variant="ghost" size="icon" :disabled="!mail">
-                            <Archive class="size-4" />
-                            <span class="sr-only">Archive</span>
+                        <Button variant="ghost" size="icon" :disabled="!file || isLoading" @click="copyToClipboard">
+                            <Clipboard class="h-4 w-4" />
+                            <span class="sr-only">Copy to Clipboard</span>
                         </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Archive</TooltipContent>
+                    <TooltipContent>Copy to Clipboard</TooltipContent>
                 </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger as-child>
-                        <Button variant="ghost" size="icon" :disabled="!mail">
-                            <ArchiveX class="size-4" />
-                            <span class="sr-only">Move to junk</span>
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Move to junk</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger as-child>
-                        <Button variant="ghost" size="icon" :disabled="!mail">
-                            <Trash2 class="size-4" />
-                            <span class="sr-only">Move to trash</span>
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Move to trash</TooltipContent>
-                </Tooltip>
-                <Separator orientation="vertical" class="mx-1 h-6" />
-                <Tooltip>
-                    <Popover>
-                        <PopoverTrigger as-child>
-                            <TooltipTrigger as-child>
-                                <Button variant="ghost" size="icon" :disabled="!mail">
-                                    <Clock class="size-4" />
-                                    <span class="sr-only">Snooze</span>
-                                </Button>
-                            </TooltipTrigger>
-                        </PopoverTrigger>
-                        <PopoverContent class="flex w-[535px] p-0">
-                            <div class="flex flex-col gap-2 border-r px-2 py-4">
-                                <div class="px-4 text-sm font-medium">
-                                    Snooze until
-                                </div>
-                                <div class="grid min-w-[250px] gap-1">
-                                    <Button
-                                        variant="ghost"
-                                        class="justify-start font-normal"
-                                    >
-                                        Later today
-                                        <span class="ml-auto text-muted-foreground">
-                      {{ format(addHours(today, 4), "E, h:m b") }}
-                    </span>
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        class="justify-start font-normal"
-                                    >
-                                        Tomorrow
-                                        <span class="ml-auto text-muted-foreground">
-                      {{ format(addDays(today, 1), "E, h:m b") }}
-                    </span>
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        class="justify-start font-normal"
-                                    >
-                                        This weekend
-                                        <span class="ml-auto text-muted-foreground">
-                      {{ format(nextSaturday(today), "E, h:m b") }}
-                    </span>
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        class="justify-start font-normal"
-                                    >
-                                        Next week
-                                        <span class="ml-auto text-muted-foreground">
-                      {{ format(addDays(today, 7), "E, h:m b") }}
-                    </span>
-                                    </Button>
-                                </div>
-                            </div>
-                            <div class="p-2">
-                                <Calendar />
-                            </div>
-                        </PopoverContent>
-                    </Popover>
-                    <TooltipContent>Snooze</TooltipContent>
-                </Tooltip>
+                <Button @click="toggleViewSource" :variant="showYamlSource ? 'default' : 'outline'">
+                    <Eye class="h-4 w-4 mr-2" />
+                    {{ showYamlSource ? 'Edit Fields' : 'View YAML Source' }}
+                </Button>
             </div>
-            <div class="ml-auto flex items-center gap-2">
-                <Tooltip>
-                    <TooltipTrigger as-child>
-                        <Button variant="ghost" size="icon" :disabled="!mail">
-                            <Reply class="size-4" />
-                            <span class="sr-only">Reply</span>
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Reply</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger as-child>
-                        <Button variant="ghost" size="icon" :disabled="!mail">
-                            <ReplyAll class="size-4" />
-                            <span class="sr-only">Reply all</span>
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Reply all</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger as-child>
-                        <Button variant="ghost" size="icon" :disabled="!mail">
-                            <Forward class="size-4" />
-                            <span class="sr-only">Forward</span>
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Forward</TooltipContent>
-                </Tooltip>
+            <div class="flex items-center gap-2">
+                <Select v-model="target" :disabled="isLoading">
+                    <SelectTrigger class="w-[180px]">
+                        <SelectValue placeholder="Select a target" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem v-for="[key, value] in sigmaTargets" :key="key" :value="key">
+                            {{ value.title }}
+                        </SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
-            <Separator orientation="vertical" class="mx-2 h-6" />
-            <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                    <Button variant="ghost" size="icon" :disabled="!mail">
-                        <MoreVertical class="size-4" />
-                        <span class="sr-only">More</span>
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                    <DropdownMenuItem>Mark as unread</DropdownMenuItem>
-                    <DropdownMenuItem>Star thread</DropdownMenuItem>
-                    <DropdownMenuItem>Add label</DropdownMenuItem>
-                    <DropdownMenuItem>Mute thread</DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
         </div>
         <Separator />
-        <div v-if="mail" class="flex flex-1 flex-col">
-            <div class="flex items-start p-4">
-                <div class="flex items-start gap-4 text-sm">
-                    <Avatar>
-                        <AvatarFallback>
-                            {{ mailFallbackName }}
-                        </AvatarFallback>
-                    </Avatar>
-                    <div class="grid gap-1">
-                        <div class="font-semibold">
-                            {{ mail.name }}
-                        </div>
-                        <div class="line-clamp-1 text-xs">
-                            {{ mail.subject }}
-                        </div>
-                        <div class="line-clamp-1 text-xs">
-                            <span class="font-medium">Reply-To:</span> {{ mail.email }}
-                        </div>
-                    </div>
+        <div v-if="file" class="flex flex-1 flex-col">
+            <div v-if="!showYamlSource" class="grid grid-cols-2 gap-4 p-4">
+                <div class="space-y-2">
+                    <Label for="title">Title</Label>
+                    <Input id="title" v-model="sigmaRule.getData().title" :disabled="isLoading" />
                 </div>
-                <div v-if="mail.date" class="ml-auto text-xs text-muted-foreground">
-                    {{ format(new Date(mail.date), "PPpp") }}
+                <div class="space-y-2">
+                    <Label for="description">Description</Label>
+                    <Textarea id="description" v-model="sigmaRule.getData().description" :disabled="isLoading" />
                 </div>
+                <div class="space-y-2">
+                    <Label for="status">Status</Label>
+                    <Select v-model="sigmaRule.getData().status" :disabled="isLoading">
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem v-for="option in statusOptions" :key="option" :value="option">
+                                {{ option }}
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div class="space-y-2">
+                    <Label for="author">Author</Label>
+                    <Input id="author" v-model="sigmaRule.getData().author" :disabled="isLoading" />
+                </div>
+                <div class="space-y-2">
+                    <Label for="references">References</Label>
+                    <TagsInput v-model="sigmaRule.getData().references" :disabled="isLoading">
+                        <TagsInputItem v-for="item in sigmaRule.getData().references" :key="item" :value="item">
+                            <TagsInputItemText />
+                            <TagsInputItemDelete />
+                        </TagsInputItem>
+                        <TagsInputInput placeholder="Add reference..." />
+                    </TagsInput>
+                </div>
+                <div class="space-y-2">
+                    <Label for="tags">Tags</Label>
+                    <TagsInput v-model="sigmaRule.getData().tags" :disabled="isLoading">
+                        <TagsInputItem v-for="item in sigmaRule.getData().tags" :key="item" :value="item">
+                            <TagsInputItemText />
+                            <TagsInputItemDelete />
+                        </TagsInputItem>
+                        <TagsInputInput placeholder="Add tag..." />
+                    </TagsInput>
+                </div>
+                <div class="space-y-2">
+                    <Label for="logsource">Logsource</Label>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger as-child>
+                            <Button variant="outline" :disabled="isLoading">
+                                {{ getLogsourceDescription(sigmaRule.getData().logsource) || 'Select Logsource' }}
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent class="w-56">
+                            <DropdownMenuItem v-for="source in logsources" :key="source.description" @click="sigmaRule.setLogsource(source)">
+                                {{ source.description }}
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+                <div class="space-y-2">
+                    <Label for="level">Level</Label>
+                    <Select v-model="sigmaRule.getData().level" :disabled="isLoading">
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select level" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem v-for="option in levelOptions" :key="option" :value="option">
+                                {{ option }}
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div class="col-span-2 space-y-2">
+                    <Label for="detection">Detection</Label>
+                    <Textarea
+                        id="detection"
+                        v-model="detectionYaml"
+                        class="min-h-[300px] flex-1 p-4 font-mono w-full"
+                        placeholder="Enter detection YAML here..."
+                        :disabled="isLoading"
+                    />
+                </div>
+            </div>
+            <div v-else class="flex-1 p-4">
+                <Label for="yamlSource">YAML Source</Label>
+                <pre><code v-html="highlightedYaml" class="language-yaml"></code></pre>
             </div>
             <Separator />
-            <div class="flex-1 whitespace-pre-wrap p-4 text-sm">
-                {{ mail.text }}
-            </div>
-            <Separator class="mt-auto" />
             <div class="p-4">
-                <form>
-                    <div class="grid gap-4">
-            <Textarea
-                class="p-4"
-                :placeholder="`Reply ${mail.name}...`"
-            />
-                        <div class="flex items-center">
-                            <Label
-                                html-for="mute"
-                                class="flex items-center gap-2 text-xs font-normal"
-                            >
-                                <Switch id="mute" aria-label="Mute thread" /> Mute this
-                                thread
-                            </Label>
-                            <Button
-                                type="button"
-                                size="sm"
-                                class="ml-auto"
-                            >
-                                Send
-                            </Button>
-                        </div>
-                    </div>
-                </form>
+                <Label for="conversionResult">Conversion Result</Label>
+                <Textarea
+                    id="conversionResult"
+                    v-model="conversionResult"
+                    class="min-h-[200px] p-4 font-mono w-full"
+                    placeholder="Conversion result will appear here..."
+                    readonly
+                />
             </div>
         </div>
         <div v-else class="p-8 text-center text-muted-foreground">
-            No message selected
+            No file selected
+        </div>
+        <div v-if="isLoading" class="absolute inset-0 flex justify-center items-center bg-background/80">
+            <div class="text-foreground">Loading Pyodide and backends... Please wait.</div>
         </div>
     </div>
 </template>
+
+<style>
+@import 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-dark.min.css';
+</style>

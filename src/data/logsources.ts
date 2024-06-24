@@ -9,7 +9,7 @@ export const logsources: Logsource[] = [
     {
         product: 'windows',
         service: 'security',
-        description: 'Windows Security Event Log'
+        description: 'Windows - Security'
     },
     {
         product: 'windows',

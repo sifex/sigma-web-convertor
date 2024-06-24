@@ -10,7 +10,7 @@ export interface LogsourceData {
 export interface SigmaRuleData {
     title: string;
     id?: string;
-    status?: 'experimental' | 'test' | 'stable' | 'deprecated' | 'unsupported';
+    status?: Status;
     description?: string;
     references?: string[];
     tags?: string[];
@@ -22,8 +22,24 @@ export interface SigmaRuleData {
         [key: string]: any;
     };
     falsepositives?: string[];
-    level?: 'informational' | 'low' | 'medium' | 'high' | 'critical';
+    level?: Level;
     license?: string;
+}
+
+export enum Status {
+    Experimental = 'experimental',
+    Test = 'test',
+    Stable = 'stable',
+    Deprecated = 'deprecated',
+    Unsupported = 'unsupported'
+}
+
+export enum Level {
+    Informational = 'informational',
+    Low = 'low',
+    Medium = 'medium',
+    High = 'high',
+    Critical = 'critical'
 }
 
 export class SigmaRule {

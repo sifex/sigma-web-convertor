@@ -55,6 +55,7 @@ const detectionYaml = computed({
     }
 })
 
+// const detectionYaml = ref(sigmaRule.value.getDetectionYaml())
 const highlightedYaml = computed(() => {
     return Prism.highlight(yamlSource.value, Prism.languages.yaml, 'yaml')
 })
@@ -73,7 +74,7 @@ function updateSigmaRule(field: string, value: any) {
 async function initializeSigmaRule() {
     if (props.file) {
         sigmaRule.value = new SigmaRule(props.file.content)
-        await convertFile()
+        // await convertFile()
     }
 }
 

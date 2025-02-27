@@ -33,7 +33,7 @@ const sigmaFiles = ref<SigmaFile[]>([
     {
         id: '1',
         name: 'AWS Root Credentials',
-        content: 'title: AWS Root Credentials\ndescription: Detects AWS root account usage\nlogsource:\n  product: aws\n  service: cloudtrail\ndetection:\n  selection:\n    userIdentity.type: Root\n  filter:\n    eventType: AwsServiceEvent\n  condition: selection and not filter\nfalsepositives:\n  - AWS Tasks That Require Root User Credentials\nlevel: medium',
+        content: 'id: 123123123\ntitle: AWS Root Credentials\ndescription: Detects AWS root account usage\nlogsource:\n  product: aws\n  service: cloudtrail\ndetection:\n  selection:\n    userIdentity.type: Root\n  filter:\n    eventType: AwsServiceEvent\n  condition: selection and not filter\nfalsepositives:\n  - AWS Tasks That Require Root User Credentials\nlevel: medium',
         date: new Date('2024-06-23T10:00:00'),
     },
     // Add more mock files as needed

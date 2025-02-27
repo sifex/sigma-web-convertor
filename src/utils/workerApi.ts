@@ -17,7 +17,11 @@ function getId() {
 // Add an id to msg, send it to worker, then wait for a response with the same id.
 // When we get such a response, use it to resolve the promise.
 function requestResponse(worker: Worker, msg: any) {
-    const { promise, resolve } = getPromiseAndResolve();
+    const { promise, resolve }: {
+        promise: Promise<any>,
+        resolve: (value: any) => void
+
+    } = getPromiseAndResolve();
     const idWorker = getId();
     worker.addEventListener("message", function listener(event) {
         if (event.data?.id !== idWorker) {
